@@ -1,0 +1,1999 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expert System - Certainty Factor AaaS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 50;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .loading {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app"></div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:7000/api';
+        
+        // State Management
+        const state = {
+            user: null,
+            token: localStorage.getItem('authToken') || null,
+            currentPage: 'login',
+            expertSystems: [],
+            currentSystem: null,
+            diseases: [],
+            symptoms: [],
+            rules: [],
+            confidenceScales: [],
+            consultations: []
+        };
+
+        // API Helper
+        const api = {
+            async request(endpoint, options = {}) {
+                const config = {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...(state.token && { 'Authorization': `Bearer ${state.token}` })
+                    },
+                    ...options
+                };
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.message || 'Terjadi kesalahan');
+                    }
+                    
+                    return data;
+                } catch (error) {
+                    showNotification(error.message, 'error');
+                    throw error;
+                }
+            },
+
+            async login(email, password) {
+                const data = await this.request('/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password })
+                });
+                state.token = data.data.token;
+                state.user = data.data.user;
+                localStorage.setItem('authToken', state.token);
+                return data;
+            },
+
+            async register(name, email, password, password_confirmation, role) {
+                const data = await this.request('/register', {
+                    method: 'POST',
+                    body: JSON.stringify({ name, email, password, password_confirmation, role })
+                });
+                return data;
+            },
+
+            async logout() {
+                await this.request('/logout', { method: 'POST' });
+                state.token = null;
+                state.user = null;
+                localStorage.removeItem('authToken');
+            },
+
+            async getMe() {
+                const data = await this.request('/me');
+                state.user = data.data;
+                return data;
+            },
+
+            async getExpertSystems() {
+                const data = await this.request('/expert-systems');
+                state.expertSystems = data.data;
+                return data;
+            },
+
+            async createExpertSystem(formData) {
+                return await this.request('/expert-systems', {
+                    method: 'POST',
+                    body: JSON.stringify(formData)
+                });
+            },
+
+            async updateExpertSystem(id, formData) {
+                return await this.request(`/expert-systems/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(formData)
+                });
+            },
+
+            async deleteExpertSystem(id) {
+                return await this.request(`/expert-systems/${id}`, {
+                    method: 'DELETE'
+                });
+            },
+
+            async getDiseases(systemId) {
+                const data = await this.request(`/expert-systems/${systemId}/diseases`);
+                state.diseases = data.data;
+                return data;
+            },
+
+            async createDisease(systemId, formData) {
+                return await this.request(`/expert-systems/${systemId}/diseases`, {
+                    method: 'POST',
+                    body: JSON.stringify(formData)
+                });
+            },
+
+            async updateDisease(systemId, id, formData) {
+                return await this.request(`/expert-systems/${systemId}/diseases/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(formData)
+                });
+            },
+
+            async deleteDisease(systemId, id) {
+                return await this.request(`/expert-systems/${systemId}/diseases/${id}`, {
+                    method: 'DELETE'
+                });
+            },
+
+            async getSymptoms(systemId) {
+                const data = await this.request(`/expert-systems/${systemId}/symptoms`);
+                state.symptoms = data.data;
+                return data;
+            },
+
+            async createSymptom(systemId, formData) {
+                return await this.request(`/expert-systems/${systemId}/symptoms`, {
+                    method: 'POST',
+                    body: JSON.stringify(formData)
+                });
+            },
+
+            async updateSymptom(systemId, id, formData) {
+                return await this.request(`/expert-systems/${systemId}/symptoms/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(formData)
+                });
+            },
+
+            async deleteSymptom(systemId, id) {
+                return await this.request(`/expert-systems/${systemId}/symptoms/${id}`, {
+                    method: 'DELETE'
+                });
+            },
+
+            async getRules(systemId) {
+                const data = await this.request(`/expert-systems/${systemId}/rules`);
+                state.rules = data.data;
+                return data;
+            },
+
+            async createRule(systemId, formData) {
+                return await this.request(`/expert-systems/${systemId}/rules`, {
+                    method: 'POST',
+                    body: JSON.stringify(formData)
+                });
+            },
+
+            async deleteRule(systemId, id) {
+                return await this.request(`/expert-systems/${systemId}/rules/${id}`, {
+                    method: 'DELETE'
+                });
+            },
+
+            async getConfidenceScales(systemId) {
+                const data = await this.request(`/expert-systems/${systemId}/confidence-scales`);
+                state.confidenceScales = data.data;
+                return data;
+            },
+
+            async bulkUpsertConfidenceScales(systemId, scales) {
+                return await this.request(`/expert-systems/${systemId}/confidence-scales/bulk`, {
+                    method: 'POST',
+                    body: JSON.stringify({ scales })
+                });
+            },
+
+            async diagnose(systemId, symptoms) {
+                return await this.request(`/expert-systems/${systemId}/diagnose`, {
+                    method: 'POST',
+                    body: JSON.stringify({ symptoms })
+                });
+            },
+
+            async getConsultations() {
+                const data = await this.request('/consultations');
+                state.consultations = data.data;
+                return data;
+            }
+        };
+
+        // Utility Functions
+        function showNotification(message, type = 'info') {
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500'
+            };
+
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50 fade-in`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        function showModal(title, content, onConfirm) {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 fade-in">
+                    <h3 class="text-xl font-bold mb-4">${title}</h3>
+                    <div class="mb-6">${content}</div>
+                    <div class="flex justify-end gap-2">
+                        <button onclick="this.closest('.modal').remove()" 
+                                class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">
+                            Batal
+                        </button>
+                        <button onclick="this.closest('.modal').remove(); (${onConfirm})()" 
+                                class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">
+                            Hapus
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Pages
+        const pages = {
+            login: () => `
+                <div class="min-h-screen gradient-bg flex items-center justify-center p-4">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 fade-in">
+                        <div class="text-center mb-8">
+                            <h1 class="text-3xl font-bold text-gray-800 mb-2">Expert System</h1>
+                            <p class="text-gray-600">Sistem Pakar Certainty Factor - AaaS</p>
+                        </div>
+
+                        <div class="mb-6">
+                            <div class="flex border-b">
+                                <button onclick="switchAuthTab('login')" 
+                                        id="loginTab"
+                                        class="flex-1 py-3 font-semibold border-b-2 border-purple-600 text-purple-600">
+                                    Login
+                                </button>
+                                <button onclick="switchAuthTab('register')" 
+                                        id="registerTab"
+                                        class="flex-1 py-3 font-semibold text-gray-500">
+                                    Register
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="loginForm">
+                            <form onsubmit="handleLogin(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                                    <input type="email" name="email" required
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                                           placeholder="email@example.com">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                                    <input type="password" name="password" required
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                                           placeholder="••••••••">
+                                </div>
+                                <button type="submit"
+                                        class="w-full gradient-bg text-white py-3 rounded-lg font-semibold hover:opacity-90 transition">
+                                    Masuk
+                                </button>
+                            </form>
+                        </div>
+
+                        <div id="registerForm" style="display: none;">
+                            <form onsubmit="handleRegister(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Nama</label>
+                                    <input type="text" name="name" required
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                                           placeholder="Nama lengkap">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                                    <input type="email" name="email" required
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                                           placeholder="email@example.com">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                                    <input type="password" name="password" required minlength="8"
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                                           placeholder="Min. 8 karakter">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Konfirmasi Password</label>
+                                    <input type="password" name="password_confirmation" required minlength="8"
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                                           placeholder="Ulangi password">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                                    <select name="role" required
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent">
+                                        <option value="">-- Pilih Role --</option>
+                                        <option value="pakar">Pakar (Expert)</option>
+                                        <option value="user">User (Pengguna)</option>
+                                    </select>
+                                </div>
+                                <button type="submit"
+                                        class="w-full gradient-bg text-white py-3 rounded-lg font-semibold hover:opacity-90 transition">
+                                    Daftar
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            `,
+
+            pakarDashboard: () => `
+                <div class="min-h-screen bg-gray-50">
+                    <!-- Navbar -->
+                    <nav class="bg-white shadow-sm">
+                        <div class="container mx-auto px-4 py-4">
+                            <div class="flex justify-between items-center">
+                                <div class="flex items-center gap-4">
+                                    <h1 class="text-2xl font-bold text-gray-800">Dashboard Pakar</h1>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <span class="text-gray-600">👤 ${state.user.name}</span>
+                                    <button onclick="handleLogout()" 
+                                            class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+                                        Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <!-- Main Content -->
+                    <div class="container mx-auto px-4 py-8">
+                        <div class="mb-6 flex justify-between items-center">
+                            <h2 class="text-2xl font-bold text-gray-800">Sistem Pakar Saya</h2>
+                            <button onclick="showCreateSystemModal()" 
+                                    class="px-6 py-3 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Buat Sistem Pakar Baru
+                            </button>
+                        </div>
+
+                        <div id="systemsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div class="text-center py-12 col-span-full">
+                                <div class="loading mx-auto mb-4"></div>
+                                <p class="text-gray-500">Memuat data...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `,
+
+            userDashboard: () => `
+                <div class="min-h-screen bg-gray-50">
+                    <!-- Navbar -->
+                    <nav class="bg-white shadow-sm">
+                        <div class="container mx-auto px-4 py-4">
+                            <div class="flex justify-between items-center">
+                                <div class="flex items-center gap-4">
+                                    <h1 class="text-2xl font-bold text-gray-800">Dashboard User</h1>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <button onclick="navigateTo('userConsultations')" 
+                                            class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600">
+                                        Riwayat Konsultasi
+                                    </button>
+                                    <span class="text-gray-600">👤 ${state.user.name}</span>
+                                    <button onclick="handleLogout()" 
+                                            class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+                                        Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <!-- Main Content -->
+                    <div class="container mx-auto px-4 py-8">
+                        <div class="mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">Sistem Pakar Tersedia</h2>
+                            <p class="text-gray-600">Pilih sistem pakar untuk melakukan konsultasi</p>
+                        </div>
+
+                        <div id="systemsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div class="text-center py-12 col-span-full">
+                                <div class="loading mx-auto mb-4"></div>
+                                <p class="text-gray-500">Memuat data...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `,
+
+            systemDetail: (system) => `
+                <div class="min-h-screen bg-gray-50">
+                    <!-- Navbar -->
+                    <nav class="bg-white shadow-sm">
+                        <div class="container mx-auto px-4 py-4">
+                            <div class="flex justify-between items-center">
+                                <button onclick="navigateTo('pakarDashboard')" 
+                                        class="text-purple-600 hover:text-purple-700">
+                                    ← Kembali
+                                </button>
+                                <div class="flex items-center gap-4">
+                                    <span class="text-gray-600">👤 ${state.user.name}</span>
+                                    <button onclick="handleLogout()" 
+                                            class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+                                        Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <!-- Main Content -->
+                    <div class="container mx-auto px-4 py-8">
+                        <!-- System Info -->
+                        <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h1 class="text-3xl font-bold text-gray-800 mb-2">${system.name}</h1>
+                                    <p class="text-gray-600">${system.description || 'Tidak ada deskripsi'}</p>
+                                    <div class="mt-2 flex gap-2">
+                                        <span class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+                                            ${system.field || 'Umum'}
+                                        </span>
+                                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                                            ${system.status}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button onclick="showEditSystemModal(${system.id})"
+                                        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                                    Edit
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Tabs -->
+                        <div class="bg-white rounded-lg shadow-sm mb-6">
+                            <div class="flex border-b">
+                                <button onclick="switchTab('diseases')" id="diseasesTab"
+                                        class="flex-1 py-4 font-semibold border-b-2 border-purple-600 text-purple-600">
+                                    Penyakit
+                                </button>
+                                <button onclick="switchTab('symptoms')" id="symptomsTab"
+                                        class="flex-1 py-4 font-semibold text-gray-500">
+                                    Gejala
+                                </button>
+                                <button onclick="switchTab('rules')" id="rulesTab"
+                                        class="flex-1 py-4 font-semibold text-gray-500">
+                                    Aturan
+                                </button>
+                                <button onclick="switchTab('scales')" id="scalesTab"
+                                        class="flex-1 py-4 font-semibold text-gray-500">
+                                    Skala Keyakinan
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Tab Content -->
+                        <div id="diseasesContent" class="fade-in">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-bold">Daftar Penyakit</h3>
+                                <button onclick="showCreateDiseaseModal()"
+                                        class="px-4 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                    Tambah Penyakit
+                                </button>
+                            </div>
+                            <div id="diseasesList" class="space-y-3">
+                                <div class="text-center py-12">
+                                    <div class="loading mx-auto mb-4"></div>
+                                    <p class="text-gray-500">Memuat data...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="symptomsContent" style="display: none;">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-bold">Daftar Gejala</h3>
+                                <button onclick="showCreateSymptomModal()"
+                                        class="px-4 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                    Tambah Gejala
+                                </button>
+                            </div>
+                            <div id="symptomsList" class="space-y-3">
+                                <div class="text-center py-12">
+                                    <div class="loading mx-auto mb-4"></div>
+                                    <p class="text-gray-500">Memuat data...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="rulesContent" style="display: none;">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-bold">Daftar Aturan</h3>
+                                <button onclick="showCreateRuleModal()"
+                                        class="px-4 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                    Tambah Aturan
+                                </button>
+                            </div>
+                            <div id="rulesList" class="space-y-3">
+                                <div class="text-center py-12">
+                                    <div class="loading mx-auto mb-4"></div>
+                                    <p class="text-gray-500">Memuat data...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="scalesContent" style="display: none;">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-bold">Skala Tingkat Keyakinan User</h3>
+                                <button onclick="showManageScalesModal()"
+                                        class="px-4 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                    Kelola Skala
+                                </button>
+                            </div>
+                            <div id="scalesList" class="bg-white rounded-lg shadow-sm p-6">
+                                <div class="text-center py-12">
+                                    <div class="loading mx-auto mb-4"></div>
+                                    <p class="text-gray-500">Memuat data...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `,
+
+            consultation: (system) => `
+                <div class="min-h-screen bg-gray-50">
+                    <!-- Navbar -->
+                    <nav class="bg-white shadow-sm">
+                        <div class="container mx-auto px-4 py-4">
+                            <div class="flex justify-between items-center">
+                                <button onclick="navigateTo('userDashboard')" 
+                                        class="text-purple-600 hover:text-purple-700">
+                                    ← Kembali
+                                </button>
+                                <div class="flex items-center gap-4">
+                                    <span class="text-gray-600">👤 ${state.user.name}</span>
+                                    <button onclick="handleLogout()" 
+                                            class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+                                        Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <!-- Main Content -->
+                    <div class="container mx-auto px-4 py-8 max-w-4xl">
+                        <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                            <h1 class="text-3xl font-bold text-gray-800 mb-2">Konsultasi: ${system.name}</h1>
+                            <p class="text-gray-600">${system.description || ''}</p>
+                        </div>
+
+                        <div class="bg-white rounded-lg shadow-sm p-6">
+                            <h2 class="text-xl font-bold mb-4">Pilih Gejala yang Dialami</h2>
+                            <p class="text-gray-600 mb-6">Pilih gejala yang Anda alami dan tentukan tingkat keyakinan Anda</p>
+                            
+                            <form id="consultationForm" onsubmit="handleDiagnose(event)">
+                                <div id="symptomsList" class="space-y-4 mb-6">
+                                    <div class="text-center py-12">
+                                        <div class="loading mx-auto mb-4"></div>
+                                        <p class="text-gray-500">Memuat data...</p>
+                                    </div>
+                                </div>
+
+                                <button type="submit" id="diagnoseBtn"
+                                        class="w-full gradient-bg text-white py-3 rounded-lg font-semibold hover:opacity-90">
+                                    Diagnosa
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Result Section -->
+                        <div id="resultSection" style="display: none;" class="mt-6 bg-white rounded-lg shadow-sm p-6">
+                            <h2 class="text-2xl font-bold mb-4">Hasil Diagnosa</h2>
+                            <div id="resultContent"></div>
+                        </div>
+                    </div>
+                </div>
+            `,
+
+            consultations: () => `
+                <div class="min-h-screen bg-gray-50">
+                    <!-- Navbar -->
+                    <nav class="bg-white shadow-sm">
+                        <div class="container mx-auto px-4 py-4">
+                            <div class="flex justify-between items-center">
+                                <button onclick="navigateTo('userDashboard')" 
+                                        class="text-purple-600 hover:text-purple-700">
+                                    ← Kembali
+                                </button>
+                                <div class="flex items-center gap-4">
+                                    <span class="text-gray-600">👤 ${state.user.name}</span>
+                                    <button onclick="handleLogout()" 
+                                            class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+                                        Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <!-- Main Content -->
+                    <div class="container mx-auto px-4 py-8">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Riwayat Konsultasi</h2>
+
+                        <div id="consultationsList" class="space-y-4">
+                            <div class="text-center py-12">
+                                <div class="loading mx-auto mb-4"></div>
+                                <p class="text-gray-500">Memuat data...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        // Event Handlers
+        async function handleLogin(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            try {
+                await api.login(formData.get('email'), formData.get('password'));
+                showNotification('Login berhasil!', 'success');
+                
+                if (state.user.role === 'pakar') {
+                    navigateTo('pakarDashboard');
+                } else {
+                    navigateTo('userDashboard');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            const password = formData.get('password');
+            const confirmation = formData.get('password_confirmation');
+            
+            if (password !== confirmation) {
+                showNotification('Password tidak cocok!', 'error');
+                return;
+            }
+
+            try {
+                await api.register(
+                    formData.get('name'),
+                    formData.get('email'),
+                    password,
+                    confirmation,
+                    formData.get('role')
+                );
+                showNotification('Registrasi berhasil! Silakan login.', 'success');
+                switchAuthTab('login');
+            } catch (error) {
+                console.error('Register error:', error);
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await api.logout();
+                showNotification('Logout berhasil', 'success');
+                navigateTo('login');
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        }
+
+        function switchAuthTab(tab) {
+            document.getElementById('loginTab').classList.remove('border-b-2', 'border-purple-600', 'text-purple-600');
+            document.getElementById('registerTab').classList.remove('border-b-2', 'border-purple-600', 'text-purple-600');
+            document.getElementById('loginTab').classList.add('text-gray-500');
+            document.getElementById('registerTab').classList.add('text-gray-500');
+            
+            if (tab === 'login') {
+                document.getElementById('loginTab').classList.add('border-b-2', 'border-purple-600', 'text-purple-600');
+                document.getElementById('loginTab').classList.remove('text-gray-500');
+                document.getElementById('loginForm').style.display = 'block';
+                document.getElementById('registerForm').style.display = 'none';
+            } else {
+                document.getElementById('registerTab').classList.add('border-b-2', 'border-purple-600', 'text-purple-600');
+                document.getElementById('registerTab').classList.remove('text-gray-500');
+                document.getElementById('loginForm').style.display = 'none';
+                document.getElementById('registerForm').style.display = 'block';
+            }
+        }
+
+        function switchTab(tab) {
+            ['diseases', 'symptoms', 'rules', 'scales'].forEach(t => {
+                document.getElementById(`${t}Tab`).classList.remove('border-b-2', 'border-purple-600', 'text-purple-600');
+                document.getElementById(`${t}Tab`).classList.add('text-gray-500');
+                document.getElementById(`${t}Content`).style.display = 'none';
+            });
+            
+            document.getElementById(`${tab}Tab`).classList.add('border-b-2', 'border-purple-600', 'text-purple-600');
+            document.getElementById(`${tab}Tab`).classList.remove('text-gray-500');
+            document.getElementById(`${tab}Content`).style.display = 'block';
+        }
+
+        async function loadExpertSystems() {
+            try {
+                await api.getExpertSystems();
+                renderExpertSystems();
+            } catch (error) {
+                console.error('Error loading systems:', error);
+            }
+        }
+
+        function renderExpertSystems() {
+            const container = document.getElementById('systemsList');
+            
+            if (state.expertSystems.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <p class="text-gray-500 text-lg">Belum ada sistem pakar</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = state.expertSystems.map(system => `
+                <div class="bg-white rounded-lg shadow-sm p-6 card-hover transition-all cursor-pointer"
+                     onclick="navigateTo('${state.user.role === 'pakar' ? 'systemDetail' : 'consultation'}', ${system.id})">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">${system.name}</h3>
+                    <p class="text-gray-600 mb-4">${system.description || 'Tidak ada deskripsi'}</p>
+                    <div class="flex gap-2 flex-wrap">
+                        <span class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+                            ${system.field || 'Umum'}
+                        </span>
+                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                            ${system.status}
+                        </span>
+                    </div>
+                    ${state.user.role === 'pakar' ? `
+                        <div class="mt-4 pt-4 border-t flex justify-between">
+                            <button onclick="event.stopPropagation(); navigateTo('systemDetail', ${system.id})"
+                                    class="text-blue-600 hover:text-blue-700 font-semibold">
+                                Kelola
+                            </button>
+                            <button onclick="event.stopPropagation(); confirmDeleteSystem(${system.id})"
+                                    class="text-red-600 hover:text-red-700 font-semibold">
+                                Hapus
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+
+        async function loadSystemDetails(systemId) {
+            state.currentSystem = state.expertSystems.find(s => s.id == systemId);
+            
+            if (!state.currentSystem) {
+                const data = await api.request(`/expert-systems/${systemId}`);
+                state.currentSystem = data.data;
+            }
+
+            render();
+            
+            await Promise.all([
+                loadDiseases(),
+                loadSymptoms(),
+                loadRules(),
+                loadConfidenceScales()
+            ]);
+        }
+
+        async function loadDiseases() {
+            try {
+                await api.getDiseases(state.currentSystem.id);
+                renderDiseases();
+            } catch (error) {
+                console.error('Error loading diseases:', error);
+            }
+        }
+
+        function renderDiseases() {
+            const container = document.getElementById('diseasesList');
+            
+            if (state.diseases.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-gray-500">Belum ada penyakit</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = state.diseases.map(disease => `
+                <div class="bg-white rounded-lg shadow-sm p-4 flex justify-between items-center">
+                    <div>
+                        <h4 class="font-bold text-gray-800">${disease.name}</h4>
+                        <p class="text-sm text-gray-600">${disease.category || 'Tanpa kategori'}</p>
+                        ${disease.description ? `<p class="text-sm text-gray-500 mt-1">${disease.description}</p>` : ''}
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="showEditDiseaseModal(${disease.id})"
+                                class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+                            
+                        </button>
+                        <button onclick="confirmDeleteDisease(${disease.id})"
+                                class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600">
+                            
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadSymptoms() {
+            try {
+                await api.getSymptoms(state.currentSystem.id);
+                renderSymptoms();
+            } catch (error) {
+                console.error('Error loading symptoms:', error);
+            }
+        }
+
+        function renderSymptoms() {
+            const container = document.getElementById('symptomsList');
+            
+            if (state.symptoms.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-gray-500">Belum ada gejala</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = state.symptoms.map(symptom => `
+                <div class="bg-white rounded-lg shadow-sm p-4 flex justify-between items-center">
+                    <div>
+                        <h4 class="font-bold text-gray-800">${symptom.name}</h4>
+                        ${symptom.description ? `<p class="text-sm text-gray-500 mt-1">${symptom.description}</p>` : ''}
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="showEditSymptomModal(${symptom.id})"
+                                class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+                            
+                        </button>
+                        <button onclick="confirmDeleteSymptom(${symptom.id})"
+                                class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600">
+                            
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadRules() {
+            try {
+                await api.getRules(state.currentSystem.id);
+                renderRules();
+            } catch (error) {
+                console.error('Error loading rules:', error);
+            }
+        }
+
+        function renderRules() {
+            const container = document.getElementById('rulesList');
+            
+            if (state.rules.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-gray-500">Belum ada aturan</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = state.rules.map(rule => {
+                const disease = state.diseases.find(d => d.id === rule.disease_id);
+                const symptom = state.symptoms.find(s => s.id === rule.symptom_id);
+                const cf = (rule.mb - rule.md).toFixed(2);
+                
+                return `
+                    <div class="bg-white rounded-lg shadow-sm p-4 flex justify-between items-center">
+                        <div class="flex-1">
+                            <div class="font-bold text-gray-800">
+                                 ${disease?.name || 'Unknown'} → 🩺 ${symptom?.name || 'Unknown'}
+                            </div>
+                            <div class="text-sm text-gray-600 mt-1">
+                                MB: ${rule.mb} | MD: ${rule.md} | CF: ${cf}
+                            </div>
+                        </div>
+                        <button onclick="confirmDeleteRule(${rule.id})"
+                                class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600">
+                            
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function loadConfidenceScales() {
+            try {
+                await api.getConfidenceScales(state.currentSystem.id);
+                renderConfidenceScales();
+            } catch (error) {
+                console.error('Error loading scales:', error);
+            }
+        }
+
+        function renderConfidenceScales() {
+            const container = document.getElementById('scalesList');
+            
+            if (state.confidenceScales.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-gray-500">Belum ada skala keyakinan. Klik "Kelola Skala" untuk menambahkan.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="space-y-3">
+                    ${state.confidenceScales.map(scale => `
+                        <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                            <span class="font-semibold">${scale.label}</span>
+                            <span class="text-purple-600 font-bold">${scale.value}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        async function loadConsultationPage(systemId) {
+            state.currentSystem = state.expertSystems.find(s => s.id == systemId);
+            
+            if (!state.currentSystem) {
+                const data = await api.request(`/expert-systems/${systemId}`);
+                state.currentSystem = data.data;
+            }
+
+            render();
+            
+            await Promise.all([
+                api.getSymptoms(systemId),
+                api.getConfidenceScales(systemId)
+            ]);
+
+            renderConsultationSymptoms();
+        }
+
+        function renderConsultationSymptoms() {
+            const container = document.getElementById('symptomsList');
+            
+            if (state.symptoms.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8">
+                        <p class="text-gray-500">Belum ada gejala tersedia untuk sistem ini</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = state.symptoms.map(symptom => `
+                <div class="border rounded-lg p-4">
+                    <div class="flex items-start gap-3">
+                        <input type="checkbox" id="symptom_${symptom.id}" 
+                               onchange="toggleSymptom(${symptom.id})"
+                               class="mt-1 w-5 h-5 text-purple-600 rounded">
+                        <div class="flex-1">
+                            <label for="symptom_${symptom.id}" class="font-semibold cursor-pointer">
+                                ${symptom.name}
+                            </label>
+                            ${symptom.description ? `<p class="text-sm text-gray-600 mt-1">${symptom.description}</p>` : ''}
+                            
+                            <div id="scale_${symptom.id}" style="display: none;" class="mt-3">
+                                <label class="block text-sm font-medium mb-2">Tingkat Keyakinan:</label>
+                                <select name="confidence_${symptom.id}" 
+                                        class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                    ${state.confidenceScales.map(scale => `
+                                        <option value="${scale.value}">${scale.label} (${scale.value})</option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleSymptom(symptomId) {
+            const checkbox = document.getElementById(`symptom_${symptomId}`);
+            const scaleDiv = document.getElementById(`scale_${symptomId}`);
+            scaleDiv.style.display = checkbox.checked ? 'block' : 'none';
+        }
+
+        async function handleDiagnose(e) {
+            e.preventDefault();
+            const form = e.target;
+            const symptoms = {};
+
+            state.symptoms.forEach(symptom => {
+                const checkbox = document.getElementById(`symptom_${symptom.id}`);
+                if (checkbox && checkbox.checked) {
+                    const select = form.querySelector(`select[name="confidence_${symptom.id}"]`);
+                    // Konversi ID ke string dan value ke float
+                    symptoms[symptom.id.toString()] = parseFloat(select.value);
+                }
+            });
+
+            if (Object.keys(symptoms).length === 0) {
+                showNotification('Pilih minimal satu gejala!', 'error');
+                return;
+            }
+
+            console.log('Symptoms yang dikirim:', symptoms); // Debug: lihat data yang dikirim
+            console.log('System ID:', state.currentSystem.id); // Debug: lihat system ID
+
+            try {
+                const result = await api.diagnose(state.currentSystem.id, symptoms);
+                console.log('Diagnose result:', result); // Debug: lihat struktur response
+                displayDiagnoseResult(result.data || result);
+                showNotification('Diagnosa berhasil!', 'success');
+            } catch (error) {
+                console.error('Diagnose error:', error);
+            }
+        }
+
+        function displayDiagnoseResult(result) {
+            const resultSection = document.getElementById('resultSection');
+            const resultContent = document.getElementById('resultContent');
+            
+            console.log('Display result:', result); // Debug: lihat data yang diterima
+            
+            resultSection.style.display = 'block';
+            
+            // Handle berbagai kemungkinan struktur response
+            let results = result.results || result.data?.results || result;
+            
+            // Jika results bukan array, coba convert
+            if (!Array.isArray(results)) {
+                if (result.disease_name || result.disease || result.name) {
+                    results = [result];
+                } else {
+                    results = [];
+                }
+            }
+            
+            if (!results || results.length === 0) {
+                resultContent.innerHTML = `
+                    <div class="text-center py-8">
+                        <div class="text-6xl mb-4">❌</div>
+                        <p class="text-gray-700 font-semibold text-lg mb-2">Tidak dapat menentukan diagnosa</p>
+                        <p class="text-gray-500 text-sm">Tidak ada aturan yang cocok dengan gejala yang Anda pilih</p>
+                        <div class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-left">
+                            <p class="text-sm text-gray-700"><strong> Kemungkinan penyebab:</strong></p>
+                            <ul class="text-sm text-gray-600 mt-2 space-y-1 list-disc list-inside">
+                                <li>Belum ada aturan (rules) yang menghubungkan gejala ini dengan penyakit</li>
+                                <li>Gejala yang dipilih tidak cukup untuk menentukan diagnosa</li>
+                                <li>Sistem pakar masih dalam tahap pengembangan</li>
+                            </ul>
+                            <p class="text-sm text-gray-600 mt-3">
+                                <strong>Saran:</strong> Coba pilih gejala lain atau hubungi pakar untuk menambahkan aturan.
+                            </p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            const topResult = results[0];
+            
+            // Dapatkan nilai CF dengan berbagai kemungkinan property name
+            const getCF = (item) => {
+                return item.cf_value || item.certainty_percentage || item.cf_result || item.cf || item.certainty_factor || item.confidence || 0;
+            };
+            
+            // Dapatkan nama penyakit dengan berbagai kemungkinan property name
+            const getDiseaseName = (item) => {
+                return item.disease_name || item.disease?.name || item.name || 'Unknown';
+            };
+            
+            // Dapatkan kategori
+            const getCategory = (item) => {
+                return item.category || item.disease?.category || '';
+            };
+            
+            const topCF = getCF(topResult);
+            const topName = getDiseaseName(topResult);
+            const topCategory = getCategory(topResult);
+            
+            // Jika CF = 0, tampilkan peringatan
+            if (topCF === 0 || topCF < 0.01) {
+                resultContent.innerHTML = `
+                    <div class="text-center py-8">
+                        <div class="text-6xl mb-4"></div>
+                        <p class="text-gray-700 font-semibold text-lg mb-2">Tingkat Kepastian Sangat Rendah</p>
+                        <p class="text-gray-500 text-sm mb-4">Hasil diagnosa: <strong>${topName}</strong></p>
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-left">
+                            <p class="text-sm text-gray-700"><strong> Peringatan:</strong></p>
+                            <p class="text-sm text-gray-600 mt-2">
+                                Sistem mendeteksi kemungkinan penyakit <strong>${topName}</strong>, 
+                                namun dengan tingkat kepastian <strong>0%</strong>.
+                            </p>
+                            <p class="text-sm text-gray-600 mt-3"><strong>Kemungkinan penyebab:</strong></p>
+                            <ul class="text-sm text-gray-600 mt-2 space-y-1 list-disc list-inside">
+                                <li>Nilai MB dan MD dalam aturan mungkin tidak sesuai</li>
+                                <li>Tingkat keyakinan yang dipilih terlalu rendah</li>
+                                <li>Kombinasi gejala tidak memberikan nilai CF yang signifikan</li>
+                            </ul>
+                            <p class="text-sm text-gray-600 mt-3">
+                                <strong>Saran:</strong> Periksa kembali aturan (rules) dan nilai MB/MD, 
+                                atau coba pilih tingkat keyakinan yang lebih tinggi untuk gejala yang Anda alami.
+                            </p>
+                        </div>
+                        <button onclick="navigateTo('consultation', ${state.currentSystem.id})"
+                                class="mt-4 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                             Coba Lagi
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+            
+            resultContent.innerHTML = `
+                <div class="bg-gradient-to-r from-purple-100 to-blue-100 rounded-lg p-6 mb-6">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-2">
+                        ${topName}
+                    </h3>
+                    ${topCategory ? `<p class="text-sm text-gray-600 mb-3">${topCategory}</p>` : ''}
+                    <div class="flex items-center gap-4">
+                        <div class="text-4xl font-bold text-purple-600">
+                            ${(topCF * 100).toFixed(1)}%
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Tingkat Kepastian</p>
+                            <p class="text-xs text-gray-500">CF: ${topCF.toFixed(4)}</p>
+                        </div>
+                    </div>
+                </div>
+
+                ${results.length > 1 ? `
+                    <h4 class="font-bold text-gray-700 mb-3">Kemungkinan Lainnya:</h4>
+                    <div class="space-y-3">
+                        ${results.slice(1).map(r => {
+                            const cf = getCF(r);
+                            const name = getDiseaseName(r);
+                            const category = getCategory(r);
+                            
+                            return `
+                                <div class="bg-gray-50 rounded-lg p-4 flex justify-between items-center">
+                                    <div>
+                                        <h5 class="font-semibold text-gray-800">${name}</h5>
+                                        ${category ? `<p class="text-sm text-gray-600">${category}</p>` : ''}
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-xl font-bold text-gray-700">
+                                            ${(cf * 100).toFixed(1)}%
+                                        </div>
+                                        <p class="text-xs text-gray-500">CF: ${cf.toFixed(4)}</p>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+
+                <div class="mt-6 pt-6 border-t space-y-3">
+                    <button onclick="navigateTo('userConsultations')"
+                            class="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600">
+                        Lihat Riwayat Konsultasi
+                    </button>
+                    <button onclick="navigateTo('consultation', ${state.currentSystem.id})"
+                            class="w-full px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                        Konsultasi Ulang
+                    </button>
+                </div>
+            `;
+
+            resultSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function loadConsultations() {
+            try {
+                await api.getConsultations();
+                renderConsultations();
+            } catch (error) {
+                console.error('Error loading consultations:', error);
+            }
+        }
+
+        function renderConsultations() {
+            const container = document.getElementById('consultationsList');
+            
+            if (state.consultations.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-gray-500 text-lg">Belum ada riwayat konsultasi</p>
+                        <button onclick="navigateTo('userDashboard')"
+                                class="mt-4 px-6 py-3 gradient-bg text-white rounded-lg hover:opacity-90">
+                            Mulai Konsultasi
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = state.consultations.map(consultation => {
+                const date = new Date(consultation.created_at).toLocaleDateString('id-ID', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                return `
+                    <div class="bg-white rounded-lg shadow-sm p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="text-xl font-bold text-gray-800">
+                                    ${consultation.expert_system?.name || 'Sistem Pakar'}
+                                </h3>
+                                <p class="text-sm text-gray-500">${date}</p>
+                            </div>
+                            <span class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+                                ${consultation.expert_system?.field || 'Umum'}
+                            </span>
+                        </div>
+
+                        <div class="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <p class="text-sm text-gray-600 mb-1">Hasil Diagnosa:</p>
+                                    <h4 class="text-lg font-bold text-gray-800">
+                                        ${consultation.disease?.name || 'Unknown'}
+                                    </h4>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-2xl font-bold text-purple-600">
+                                        ${(consultation.cf_result * 100).toFixed(1)}%
+                                    </div>
+                                    <p class="text-xs text-gray-500">CF: ${consultation.cf_result.toFixed(4)}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Modal Functions
+        function showCreateSystemModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 fade-in max-h-[90vh] overflow-y-auto">
+                    <h3 class="text-2xl font-bold mb-4">➕ Buat Sistem Pakar Baru</h3>
+                    <form onsubmit="handleCreateSystem(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Nama Sistem</label>
+                            <input type="text" name="name" required
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                   placeholder="Sistem Pakar Penyakit Kulit">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Bidang/Kategori</label>
+                            <input type="text" name="field" required
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                   placeholder="Kesehatan">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Deskripsi</label>
+                            <textarea name="description" rows="3" required
+                                      class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                      placeholder="Deskripsi sistem pakar..."></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Target Pengguna</label>
+                            <input type="text" name="target_user"
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                   placeholder="Masyarakat umum">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Status</label>
+                            <select name="status" required
+                                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                <option value="draft">Draft</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" onclick="this.closest('.modal').remove()" 
+                                    class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                                Batal
+                            </button>
+                            <button type="submit" 
+                                    class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Simpan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function handleCreateSystem(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                await api.createExpertSystem(data);
+                e.target.closest('.modal').remove();
+                showNotification('Sistem pakar berhasil dibuat!', 'success');
+                await loadExpertSystems();
+            } catch (error) {
+                console.error('Create system error:', error);
+            }
+        }
+
+        function showEditSystemModal(systemId) {
+            const system = state.expertSystems.find(s => s.id == systemId);
+            
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 fade-in max-h-[90vh] overflow-y-auto">
+                    <h3 class="text-2xl font-bold mb-4">✏️ Edit Sistem Pakar</h3>
+                    <form onsubmit="handleUpdateSystem(event, ${systemId})" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Nama Sistem</label>
+                            <input type="text" name="name" required value="${system.name}"
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Bidang/Kategori</label>
+                            <input type="text" name="field" value="${system.field || ''}"
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Deskripsi</label>
+                            <textarea name="description" rows="3"
+                                      class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">${system.description || ''}</textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Target Pengguna</label>
+                            <input type="text" name="target_user" value="${system.target_user || ''}"
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Status</label>
+                            <select name="status" required
+                                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                <option value="draft" ${system.status === 'draft' ? 'selected' : ''}>Draft</option>
+                                <option value="active" ${system.status === 'active' ? 'selected' : ''}>Active</option>
+                                <option value="inactive" ${system.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+                            </select>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" onclick="this.closest('.modal').remove()" 
+                                    class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                                Batal
+                            </button>
+                            <button type="submit" 
+                                    class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Update
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function handleUpdateSystem(e, systemId) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                await api.updateExpertSystem(systemId, data);
+                e.target.closest('.modal').remove();
+                showNotification('Sistem pakar berhasil diupdate!', 'success');
+                await loadSystemDetails(systemId);
+            } catch (error) {
+                console.error('Update system error:', error);
+            }
+        }
+
+        function confirmDeleteSystem(systemId) {
+            const system = state.expertSystems.find(s => s.id == systemId);
+            showModal(
+                '🗑️ Konfirmasi Hapus',
+                `Apakah Anda yakin ingin menghapus sistem pakar "${system.name}"?`,
+                () => deleteSystem(systemId)
+            );
+        }
+
+        async function deleteSystem(systemId) {
+            try {
+                await api.deleteExpertSystem(systemId);
+                showNotification('Sistem pakar berhasil dihapus!', 'success');
+                await loadExpertSystems();
+            } catch (error) {
+                console.error('Delete system error:', error);
+            }
+        }
+
+        function showCreateDiseaseModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4 fade-in">
+                    <h3 class="text-xl font-bold mb-4">➕ Tambah Penyakit</h3>
+                    <form onsubmit="handleCreateDisease(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Nama Penyakit</label>
+                            <input type="text" name="name" required
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                   placeholder="Dermatitis Atopik">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Kategori</label>
+                            <input type="text" name="category"
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                   placeholder="Penyakit Kulit">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Deskripsi</label>
+                            <textarea name="description" rows="3"
+                                      class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                      placeholder="Deskripsi penyakit..."></textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" onclick="this.closest('.modal').remove()" 
+                                    class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                                Batal
+                            </button>
+                            <button type="submit" 
+                                    class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Simpan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function handleCreateDisease(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                await api.createDisease(state.currentSystem.id, data);
+                e.target.closest('.modal').remove();
+                showNotification('Penyakit berhasil ditambahkan!', 'success');
+                await loadDiseases();
+            } catch (error) {
+                console.error('Create disease error:', error);
+            }
+        }
+
+        function showEditDiseaseModal(diseaseId) {
+            const disease = state.diseases.find(d => d.id == diseaseId);
+            
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4 fade-in">
+                    <h3 class="text-xl font-bold mb-4">✏️ Edit Penyakit</h3>
+                    <form onsubmit="handleUpdateDisease(event, ${diseaseId})" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Nama Penyakit</label>
+                            <input type="text" name="name" required value="${disease.name}"
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Kategori</label>
+                            <input type="text" name="category" value="${disease.category || ''}"
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Deskripsi</label>
+                            <textarea name="description" rows="3"
+                                      class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">${disease.description || ''}</textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" onclick="this.closest('.modal').remove()" 
+                                    class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                                Batal
+                            </button>
+                            <button type="submit" 
+                                    class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Update
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function handleUpdateDisease(e, diseaseId) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                await api.updateDisease(state.currentSystem.id, diseaseId, data);
+                e.target.closest('.modal').remove();
+                showNotification('Penyakit berhasil diupdate!', 'success');
+                await loadDiseases();
+            } catch (error) {
+                console.error('Update disease error:', error);
+            }
+        }
+
+        function confirmDeleteDisease(diseaseId) {
+            const disease = state.diseases.find(d => d.id == diseaseId);
+            showModal(
+                '🗑️ Konfirmasi Hapus',
+                `Apakah Anda yakin ingin menghapus penyakit "${disease.name}"?`,
+                () => deleteDisease(diseaseId)
+            );
+        }
+
+        async function deleteDisease(diseaseId) {
+            try {
+                await api.deleteDisease(state.currentSystem.id, diseaseId);
+                showNotification('Penyakit berhasil dihapus!', 'success');
+                await loadDiseases();
+            } catch (error) {
+                console.error('Delete disease error:', error);
+            }
+        }
+
+        function showCreateSymptomModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4 fade-in">
+                    <h3 class="text-xl font-bold mb-4">➕ Tambah Gejala</h3>
+                    <form onsubmit="handleCreateSymptom(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Nama Gejala</label>
+                            <input type="text" name="name" required
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                   placeholder="Kulit kemerahan">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Deskripsi</label>
+                            <textarea name="description" rows="3"
+                                      class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                      placeholder="Deskripsi gejala..."></textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" onclick="this.closest('.modal').remove()" 
+                                    class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                                Batal
+                            </button>
+                            <button type="submit" 
+                                    class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Simpan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function handleCreateSymptom(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                await api.createSymptom(state.currentSystem.id, data);
+                e.target.closest('.modal').remove();
+                showNotification('Gejala berhasil ditambahkan!', 'success');
+                await loadSymptoms();
+            } catch (error) {
+                console.error('Create symptom error:', error);
+            }
+        }
+
+        function showEditSymptomModal(symptomId) {
+            const symptom = state.symptoms.find(s => s.id == symptomId);
+            
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4 fade-in">
+                    <h3 class="text-xl font-bold mb-4">✏️ Edit Gejala</h3>
+                    <form onsubmit="handleUpdateSymptom(event, ${symptomId})" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Nama Gejala</label>
+                            <input type="text" name="name" required value="${symptom.name}"
+                                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Deskripsi</label>
+                            <textarea name="description" rows="3"
+                                      class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">${symptom.description || ''}</textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" onclick="this.closest('.modal').remove()" 
+                                    class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                                Batal
+                            </button>
+                            <button type="submit" 
+                                    class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Update
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function handleUpdateSymptom(e, symptomId) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                await api.updateSymptom(state.currentSystem.id, symptomId, data);
+                e.target.closest('.modal').remove();
+                showNotification('Gejala berhasil diupdate!', 'success');
+                await loadSymptoms();
+            } catch (error) {
+                console.error('Update symptom error:', error);
+            }
+        }
+
+        function confirmDeleteSymptom(symptomId) {
+            const symptom = state.symptoms.find(s => s.id == symptomId);
+            showModal(
+                '🗑️ Konfirmasi Hapus',
+                `Apakah Anda yakin ingin menghapus gejala "${symptom.name}"?`,
+                () => deleteSymptom(symptomId)
+            );
+        }
+
+        async function deleteSymptom(symptomId) {
+            try {
+                await api.deleteSymptom(state.currentSystem.id, symptomId);
+                showNotification('Gejala berhasil dihapus!', 'success');
+                await loadSymptoms();
+            } catch (error) {
+                console.error('Delete symptom error:', error);
+            }
+        }
+
+        function showCreateRuleModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4 fade-in">
+                    <h3 class="text-xl font-bold mb-4">➕ Tambah Aturan</h3>
+                    <form onsubmit="handleCreateRule(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Penyakit</label>
+                            <select name="disease_id" required
+                                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                <option value="">-- Pilih Penyakit --</option>
+                                ${state.diseases.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Gejala</label>
+                            <select name="symptom_id" required
+                                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                <option value="">-- Pilih Gejala --</option>
+                                ${state.symptoms.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-2">MB (Measure of Belief)</label>
+                                <input type="number" name="mb" required step="0.1" min="0" max="1" value="0.8"
+                                       class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-2">MD (Measure of Disbelief)</label>
+                                <input type="number" name="md" required step="0.1" min="0" max="1" value="0.2"
+                                       class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                            </div>
+                        </div>
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                            <p class="text-gray-700"><strong>Info:</strong> CF = MB - MD</p>
+                            <p class="text-gray-600 mt-1">MB: tingkat kepercayaan gejala menunjukkan penyakit</p>
+                            <p class="text-gray-600">MD: tingkat ketidakpercayaan gejala menunjukkan penyakit</p>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" onclick="this.closest('.modal').remove()" 
+                                    class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                                Batal
+                            </button>
+                            <button type="submit" 
+                                    class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Simpan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function handleCreateRule(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                disease_id: parseInt(formData.get('disease_id')),
+                symptom_id: parseInt(formData.get('symptom_id')),
+                mb: parseFloat(formData.get('mb')),
+                md: parseFloat(formData.get('md'))
+            };
+
+            try {
+                await api.createRule(state.currentSystem.id, data);
+                e.target.closest('.modal').remove();
+                showNotification('Aturan berhasil ditambahkan!', 'success');
+                await loadRules();
+            } catch (error) {
+                console.error('Create rule error:', error);
+            }
+        }
+
+        function confirmDeleteRule(ruleId) {
+            showModal(
+                '🗑️ Konfirmasi Hapus',
+                'Apakah Anda yakin ingin menghapus aturan ini?',
+                () => deleteRule(ruleId)
+            );
+        }
+
+        async function deleteRule(ruleId) {
+            try {
+                await api.deleteRule(state.currentSystem.id, ruleId);
+                showNotification('Aturan berhasil dihapus!', 'success');
+                await loadRules();
+            } catch (error) {
+                console.error('Delete rule error:', error);
+            }
+        }
+
+        function showManageScalesModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4 fade-in max-h-[90vh] overflow-y-auto">
+                    <h3 class="text-xl font-bold mb-4">📊 Kelola Skala Keyakinan</h3>
+                    <form onsubmit="handleSaveScales(event)" class="space-y-4">
+                        <div id="scalesInputs">
+                            ${state.confidenceScales.length > 0 ? 
+                                state.confidenceScales.map((scale, idx) => `
+                                    <div class="flex gap-2 mb-2">
+                                        <input type="text" name="label_${idx}" value="${scale.label}" required
+                                               class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                               placeholder="Label">
+                                        <input type="number" name="value_${idx}" value="${scale.value}" required step="0.1" min="0" max="1"
+                                               class="w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                                               placeholder="0.8">
+                                    </div>
+                                `).join('') 
+                                : 
+                                `
+                                <div class="flex gap-2 mb-2">
+                                    <input type="text" name="label_0" value="Tidak Yakin" required
+                                           class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                    <input type="number" name="value_0" value="0" required step="0.1" min="0" max="1"
+                                           class="w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                </div>
+                                <div class="flex gap-2 mb-2">
+                                    <input type="text" name="label_1" value="Kurang Yakin" required
+                                           class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                    <input type="number" name="value_1" value="0.2" required step="0.1" min="0" max="1"
+                                           class="w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                </div>
+                                <div class="flex gap-2 mb-2">
+                                    <input type="text" name="label_2" value="Cukup Yakin" required
+                                           class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                    <input type="number" name="value_2" value="0.4" required step="0.1" min="0" max="1"
+                                           class="w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                </div>
+                                <div class="flex gap-2 mb-2">
+                                    <input type="text" name="label_3" value="Yakin" required
+                                           class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                    <input type="number" name="value_3" value="0.6" required step="0.1" min="0" max="1"
+                                           class="w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                </div>
+                                <div class="flex gap-2 mb-2">
+                                    <input type="text" name="label_4" value="Sangat Yakin" required
+                                           class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                    <input type="number" name="value_4" value="0.8" required step="0.1" min="0" max="1"
+                                           class="w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                </div>
+                                <div class="flex gap-2 mb-2">
+                                    <input type="text" name="label_5" value="Pasti" required
+                                           class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                    <input type="number" name="value_5" value="1" required step="0.1" min="0" max="1"
+                                           class="w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600">
+                                </div>
+                                `
+                            }
+                        </div>
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                            <p class="text-gray-700"><strong>Info:</strong> Skala keyakinan digunakan oleh user saat konsultasi.</p>
+                            <p class="text-gray-600 mt-1">Nilai harus antara 0 dan 1.</p>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" onclick="this.closest('.modal').remove()" 
+                                    class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                                Batal
+                            </button>
+                            <button type="submit" 
+                                    class="px-6 py-2 gradient-bg text-white rounded-lg hover:opacity-90">
+                                Simpan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function handleSaveScales(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const scales = [];
+            
+            let idx = 0;
+            while (formData.has(`label_${idx}`)) {
+                scales.push({
+                    label: formData.get(`label_${idx}`),
+                    value: parseFloat(formData.get(`value_${idx}`))
+                });
+                idx++;
+            }
+
+            try {
+                await api.bulkUpsertConfidenceScales(state.currentSystem.id, scales);
+                e.target.closest('.modal').remove();
+                showNotification('Skala keyakinan berhasil disimpan!', 'success');
+                await loadConfidenceScales();
+            } catch (error) {
+                console.error('Save scales error:', error);
+            }
+        }
+
+        // Navigation
+        async function navigateTo(page, id = null) {
+            state.currentPage = page;
+            
+            if (page === 'pakarDashboard') {
+                render();
+                await loadExpertSystems();
+            } else if (page === 'userDashboard') {
+                render();
+                await loadExpertSystems();
+            } else if (page === 'systemDetail') {
+                await loadSystemDetails(id);
+            } else if (page === 'consultation') {
+                await loadConsultationPage(id);
+            } else if (page === 'userConsultations') {
+                render();
+                await loadConsultations();
+            } else {
+                render();
+            }
+        }
+
+        // Render
+        function render() {
+            const app = document.getElementById('app');
+            
+            if (state.currentPage === 'login') {
+                app.innerHTML = pages.login();
+            } else if (state.currentPage === 'pakarDashboard') {
+                app.innerHTML = pages.pakarDashboard();
+            } else if (state.currentPage === 'userDashboard') {
+                app.innerHTML = pages.userDashboard();
+            } else if (state.currentPage === 'systemDetail') {
+                app.innerHTML = pages.systemDetail(state.currentSystem);
+            } else if (state.currentPage === 'consultation') {
+                app.innerHTML = pages.consultation(state.currentSystem);
+            } else if (state.currentPage === 'userConsultations') {
+                app.innerHTML = pages.consultations();
+            }
+        }
+
+        // Initialize
+        async function init() {
+            if (state.token) {
+                try {
+                    await api.getMe();
+                    if (state.user.role === 'pakar') {
+                        navigateTo('pakarDashboard');
+                    } else {
+                        navigateTo('userDashboard');
+                    }
+                } catch (error) {
+                    console.error('Init error:', error);
+                    navigateTo('login');
+                }
+            } else {
+                navigateTo('login');
+            }
+        }
+
+        // Start app
+        init();
+    </script>
+</body>
+</html>
